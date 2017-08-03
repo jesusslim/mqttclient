@@ -1,0 +1,22 @@
+{
+	"name": "jesusslim/mqttclient",
+	"description": "php mqtt client",
+	"license": "MIT",
+	"keywords": ["mqtt"],
+	"version": "0.9",
+	"authors": [
+		{
+			"name": "jesusslim",
+			"email": "755808379@qq.com"
+		}
+	],
+	"require": {
+		"php": ">=5.6.0",
+		"jesusslim/pinject": "dev-master"
+	},
+	"autoload": {
+		"psr-4": {
+			"mqttclient\\": "mqttclient/"
+		}
+	}
+}

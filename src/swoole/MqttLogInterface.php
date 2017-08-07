@@ -6,7 +6,7 @@
  * Time: 下午11:38
  */
 
-namespace mqttclient\src;
+namespace mqttclient\src\swoole;
 
 
 interface MqttLogInterface

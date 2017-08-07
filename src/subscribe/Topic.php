@@ -73,7 +73,4 @@ class Topic
     {
         $this->handler = $handler;
     }
-
-
-
 }

@@ -344,15 +344,14 @@ class MqttClient
                         $this->logger->log(MqttLogInterface::ERROR,'Subscribe request of msg id '.$msg_id.' not found.');
                     } else {
                         foreach ($result as $k => $qos) {
-                            /* @var Topic $topic */
-                            $topic = $req[$k];
-                            if ($topic){
+                            $topic_name = $req[$k];
+                            if ($topic_name){
                                 if ($qos != 0x80) {
-                                    if (isset($this->topics[$topic->getTopic()])){
-                                        $this->topics[$topic->getTopic()]->setQos($qos);
+                                    if (isset($this->topics[$topic_name])){
+                                        $this->topics[$topic_name]->setQos($qos);
                                     }
                                 } else {
-                                    $this->logger->log(MqttLogInterface::ERROR,'Subscribe '.$topic->getTopic().' fail.');
+                                    $this->logger->log(MqttLogInterface::ERROR,'Subscribe '.$topic_name.' fail.');
                                 }
                             }else{
                                 $this->logger->log(MqttLogInterface::ERROR,'Subscribe topic not found.');
@@ -558,7 +557,7 @@ class MqttClient
         $subscribe = Message::produce(MessageType::SUBSCRIBE,$this);
         $subscribe->setMessageId($id);
         $this->write($subscribe);
-        $this->store->set(MessageType::SUBACK,'requesting',$id,array_values($this->getTopics()));
+        $this->store->set(MessageType::SUBACK,'requesting',$id,array_keys($this->getTopics()));
         return $id;
     }
 

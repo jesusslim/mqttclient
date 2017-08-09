@@ -73,6 +73,12 @@ use MqttClient
         })
     ]
 	);
+	
+	//set trigger
+	$r->on(\mqttclient\src\consts\ClientTriggers::RECEIVE_SUBACK,function(\mqttclient\src\swoole\MqttClient $client){
+    	$client->publish('slim/echo','GGXX',\mqttclient\src\consts\Qos::ONE_TIME);
+    });
+	
 	$r->connect();
 	$r->publish('test/slim','test qos',2);
 	

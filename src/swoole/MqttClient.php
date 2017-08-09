@@ -10,10 +10,10 @@ namespace mqttclient\src\swoole;
 
 
 use Inject\Injector;
+use mqttclient\src\consts\ClientTriggers;
 use mqttclient\src\consts\MessageType;
 use mqttclient\src\consts\MqttVersion;
 use mqttclient\src\consts\Qos;
-use mqttclient\src\subscribe\Topic;
 use mqttclient\src\swoole\message\MessageInterface;
 use mqttclient\src\swoole\message\Publish;
 use mqttclient\src\swoole\message\Suback;
@@ -82,6 +82,12 @@ class MqttClient
     protected $last_ping_time = 0;
 
     /**** tmp ****/
+
+    /**** call back ****/
+
+    private $call_backs = [];
+
+    /**** call back ****/
 
     public function __construct($host,$port,$client_id)
     {
@@ -321,6 +327,7 @@ class MqttClient
             $msg = Message::produce(MessageType::CONNECT,$this);
             $this->write($msg);
             $this->keep_alive_timer_id = swoole_timer_tick($this->keep_alive * 500, [$this, 'keepAlive']);
+            $this->trigger(ClientTriggers::SOCKET_CONNECT,null);
         });
 
         $this->socket->on('receive',function($cli,$data){
@@ -330,9 +337,11 @@ class MqttClient
                 case MessageType::CONNACK:
                     $this->logger->log(MqttLogInterface::DEBUG,'Receive CONNACK.');
                     $this->subscribe();
+                    $this->trigger(ClientTriggers::RECEIVE_CONNACK,$message);
                     break;
                 case MessageType::PINGRESP:
                     $this->logger->log(MqttLogInterface::DEBUG,'Receive PINGRESP.');
+                    $this->trigger(ClientTriggers::RECEIVE_PINGRESP,$message);
                     break;
                 case MessageType::SUBACK:
                     $msg_id = $message->getMessageId();
@@ -359,6 +368,7 @@ class MqttClient
                         }
                         $this->store->delete(MessageType::SUBACK,'requesting',$msg_id);
                     }
+                    $this->trigger(ClientTriggers::RECEIVE_SUBACK,$message);
                     break;
                 case MessageType::PUBLISH:
                     /* @var Publish $message */
@@ -383,12 +393,14 @@ class MqttClient
                         $this->registerResend(MessageType::PUBREL,'pubrecing',$msg_id,$this->resend_times);
                         $this->handleReceive($message);
                     }
+                    $this->trigger(ClientTriggers::RECEIVE_PUBLISH,$message);
                     break;
                 case MessageType::PUBACK:
                     $msg_id = $message->getMessageId();
                     $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBACK. MESSAGE_ID:'.$msg_id);
                     $this->getStore()->delete(MessageType::PUBACK,'publishing',$msg_id);
                     $this->unregisterResend(MessageType::PUBACK,'publishing',$msg_id);
+                    $this->trigger(ClientTriggers::RECEIVE_PUBACK,$message);
                     break;
                 case MessageType::PUBREC:
                     $msg_id = $message->getMessageId();
@@ -400,6 +412,7 @@ class MqttClient
                     $this->write($pubrel);
                     $this->getStore()->set(MessageType::PUBCOMP,'pubreling',$msg_id,$pubrel->encode());
                     $this->registerResend(MessageType::PUBCOMP,'pubreling',$msg_id,$this->resend_times);
+                    $this->trigger(ClientTriggers::RECEIVE_PUBREC,$message);
                     break;
                 case MessageType::PUBREL:
                     $msg_id = $message->getMessageId();
@@ -409,12 +422,14 @@ class MqttClient
                     $pubcomp = Message::produce(MessageType::PUBCOMP,$this);
                     $pubcomp->setMessageId($msg_id);
                     $this->write($pubcomp);
+                    $this->trigger(ClientTriggers::RECEIVE_PUBREL,$message);
                     break;
                 case MessageType::PUBCOMP:
                     $msg_id = $message->getMessageId();
                     $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBCOMP. MESSAGE_ID:'.$msg_id);
                     $this->getStore()->delete(MessageType::PUBCOMP,'pubreling',$msg_id);
                     $this->unregisterResend(MessageType::PUBCOMP,'pubreling',$msg_id);
+                    $this->trigger(ClientTriggers::RECEIVE_PUBCOMP,$message);
                     break;
                 case MessageType::UNSUBACK:
                     $msg_id = $message->getMessageId();
@@ -429,10 +444,12 @@ class MqttClient
                         }
                         $this->store->delete(MessageType::UNSUBACK,'requesting',$msg_id);
                     }
+                    $this->trigger(ClientTriggers::RECEIVE_UNSUBACK,$message);
                     break;
                 default:
                     break;
             }
+            $this->trigger(ClientTriggers::SOCKET_RECEIVE,$message);
         });
 
         $this->socket->on('error',function($error){
@@ -443,6 +460,7 @@ class MqttClient
             }else{
                 $this->disconnect();
             }
+            $this->trigger(ClientTriggers::SOCKET_ERROR,null);
         });
 
         $this->socket->on('close',function(){
@@ -458,6 +476,8 @@ class MqttClient
             }else{
                 $this->disconnect();
             }
+
+            $this->trigger(ClientTriggers::SOCKET_CLOSE,null);
         });
 
         swoole_async_dns_lookup($this->host, function($host, $ip) use($port){
@@ -510,7 +530,9 @@ class MqttClient
     public function ping(){
         $this->logger->log(MqttLogInterface::DEBUG,'Ping');
         $ping = Message::produce(MessageType::PINGREQ,$this);
-        return $this->write($ping);
+        $r = $this->write($ping);
+        $this->trigger(ClientTriggers::PING,$ping);
+        return $r;
     }
 
     /**
@@ -523,6 +545,7 @@ class MqttClient
         $disconnect = Message::produce(MessageType::DISCONNECT,$this);
         $this->write($disconnect);
         if ($this->socket->isConnected()) $this->socket->close();
+        $this->trigger(ClientTriggers::DISCONNECT,$disconnect);
         return true;
     }
 
@@ -558,6 +581,7 @@ class MqttClient
         $subscribe->setMessageId($id);
         $this->write($subscribe);
         $this->store->set(MessageType::SUBACK,'requesting',$id,array_keys($this->getTopics()));
+        $this->trigger(ClientTriggers::SUBSCRIBE,$subscribe);
         return $id;
     }
 
@@ -575,6 +599,7 @@ class MqttClient
         $unsubscribe->setTopics($topics);
         $this->write($unsubscribe);
         $this->store->set(MessageType::UNSUBACK,'requesting',$id,array_values($topics));
+        $this->trigger(ClientTriggers::UNSUBSCRIBE,$unsubscribe);
         return $id;
     }
 
@@ -615,7 +640,7 @@ class MqttClient
                 $this->registerResend(MessageType::PUBREC,'publishing',$msg_id,$this->resend_times);
             }
         }
-
+        $this->trigger(ClientTriggers::PUBLISH,$publish);
         return $msg_id;
     }
 
@@ -687,5 +712,27 @@ class MqttClient
     public function checkMemory(){
         $use_age = memory_get_usage();
         $this->logger->log(MqttLogInterface::INFO,'MEMORY USAGE:'.$use_age);
+    }
+
+    /**
+     * set a trigger
+     * @param $trigger
+     * @param \Closure $call_back
+     */
+    public function on($trigger,\Closure $call_back){
+        $this->call_backs[$trigger] = $call_back;
+        return $this;
+    }
+
+    /**
+     * trigger
+     * @param $trigger
+     * @param MessageInterface|null $msg
+     */
+    protected function trigger($trigger,MessageInterface $msg = null){
+        if (isset($this->call_backs[$trigger])){
+            $container = $this->produceContainer();
+            $container->call($this->call_backs[$trigger],['msg' => $msg]);
+        }
     }
 }

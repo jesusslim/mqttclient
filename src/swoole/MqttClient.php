@@ -33,6 +33,9 @@ class MqttClient
     private $port;
     private $client_id;
 
+    //协议最大长度
+    private $package_max_length;
+
     //auth 加密 [user_name => '',password => '']
     private $auth;
 
@@ -100,6 +103,7 @@ class MqttClient
         $this->keep_alive = 60;
         $this->mqtt_version = MqttVersion::V311;
         $this->clean = true;
+        $this->package_max_length = 1024*1024*2;
     }
 
     /**
@@ -116,6 +120,22 @@ class MqttClient
     public function setClientId($client_id)
     {
         $this->client_id = $client_id;
+    }
+
+    /**
+     * @return int
+     */
+    public function getPackageMaxLength()
+    {
+        return $this->package_max_length;
+    }
+
+    /**
+     * @param int $package_max_length
+     */
+    public function setPackageMaxLength($package_max_length)
+    {
+        $this->package_max_length = $package_max_length;
     }
 
     /**
@@ -317,7 +337,7 @@ class MqttClient
         $this->socket = new \swoole_client(SWOOLE_SOCK_TCP, SWOOLE_SOCK_ASYNC);
         $this->socket->set([
             'open_mqtt_protocol'     => true,
-            'package_max_length'    => 2000000,  //协议最大长度
+            'package_max_length'    => $this->package_max_length,  //协议最大长度
         ]);
         $port = $this->port;
 

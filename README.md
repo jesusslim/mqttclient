@@ -16,6 +16,10 @@ If your composer not allowed dev-master,add this config
 	
 into your composer.json.
 
+### Require
+
+	swoole 2.0.8+
+
 ### Example
 
 define your logger:

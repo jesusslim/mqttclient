@@ -86,3 +86,38 @@ use MqttClient
 	$r->connect();
 	$r->publish('test/slim','test qos',2);
 	
+### Extends
+
+You can also use own client extends MqttClient.
+
+Example:
+
+	class Client extends MqttClient
+	{
+	    private $mysql_handler;
+	    private $mongo_handler;
+	
+	    public function __construct($host,$port,$client_id,$mysql_conf,$mongo_conf)
+	    {
+	        $this->mysql_handler = new Mysqli($mysql_conf);
+	        $this->mongo_handler = new \MongoClient('mongodb://'.$mongo_conf['username'].':'.$mongo_conf['password'].'@'.$mongo_conf['host'].':'.$mongo_conf['port'].'/'.$mongo_conf['db']);
+	        parent::__construct($host,$port,$client_id);
+	    }
+	
+		 /**
+	     * override the produceContainer function and map your own class/data/closure to the injector,and they can be used in every publish receive handler
+	     * for exp: $client->setTopics([new Topic('test/own',function($mongo,$msg){ $result = $mongo->selectCollection('log_platform','test')->find(['sid' => ['$gte' => intval($msg)]]); })]);
+	     * @return Injector
+	     */
+	    protected function produceContainer()
+	    {
+	        $container = new Injector();
+	        $container->mapData(MqttClient::class,$this);
+	        $container->mapData(Client::class,$this);
+	        $container->mapData('mysqli',$this->mysql_handler);
+	        $container->mapData('mongo',$this->mongo_handler);
+	        return $container;
+	    }
+	
+	}
+

@@ -342,162 +342,175 @@ class MqttClient
         $port = $this->port;
 
         $this->socket->on('connect',function ($cli){
-            $this->reconnect_count = 0;
-            /* @var \mqttclient\src\message\Connect */
-            $msg = Message::produce(MessageType::CONNECT,$this);
-            $this->write($msg);
-            $this->keep_alive_timer_id = swoole_timer_tick($this->keep_alive * 500, [$this, 'keepAlive']);
-            $this->trigger(ClientTriggers::SOCKET_CONNECT,null);
+            try{
+                $this->reconnect_count = 0;
+                $msg = Message::produce(MessageType::CONNECT,$this);
+                $this->write($msg);
+                $this->keep_alive_timer_id = swoole_timer_tick($this->keep_alive * 500, [$this, 'keepAlive']);
+                $this->trigger(ClientTriggers::SOCKET_CONNECT,null);
+            }catch (\Exception $exception){
+                $this->getLogger()->log(MqttLogInterface::ERROR,$exception->getMessage());
+            }
         });
 
         $this->socket->on('receive',function($cli,$data){
-            /* @var MessageInterface $message */
-            $message = $this->read($data);
-            switch ($message->getType()){
-                case MessageType::CONNACK:
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive CONNACK.');
-                    $this->subscribe();
-                    $this->trigger(ClientTriggers::RECEIVE_CONNACK,$message);
-                    break;
-                case MessageType::PINGRESP:
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive PINGRESP.');
-                    $this->trigger(ClientTriggers::RECEIVE_PINGRESP,$message);
-                    break;
-                case MessageType::SUBACK:
-                    $msg_id = $message->getMessageId();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive SUBACK.');
-                    /* @var Suback $message */
-                    $result = $message->getResult();
-                    $req = $this->store->get(MessageType::SUBACK,'requesting',$msg_id);
-                    if (!$req) {
-                        $this->logger->log(MqttLogInterface::ERROR,'Subscribe request of msg id '.$msg_id.' not found.');
-                    } else {
-                        foreach ($result as $k => $qos) {
-                            $topic_name = $req[$k];
-                            if ($topic_name){
-                                if ($qos != 0x80) {
-                                    if (isset($this->topics[$topic_name])){
-                                        $this->topics[$topic_name]->setQos($qos);
+            try{
+                /* @var MessageInterface $message */
+                $message = $this->read($data);
+                switch ($message->getType()){
+                    case MessageType::CONNACK:
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive CONNACK.');
+                        $this->subscribe();
+                        $this->trigger(ClientTriggers::RECEIVE_CONNACK,$message);
+                        break;
+                    case MessageType::PINGRESP:
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive PINGRESP.');
+                        $this->trigger(ClientTriggers::RECEIVE_PINGRESP,$message);
+                        break;
+                    case MessageType::SUBACK:
+                        $msg_id = $message->getMessageId();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive SUBACK.');
+                        /* @var Suback $message */
+                        $result = $message->getResult();
+                        $req = $this->store->get(MessageType::SUBACK,'requesting',$msg_id);
+                        if (!$req) {
+                            $this->logger->log(MqttLogInterface::ERROR,'Subscribe request of msg id '.$msg_id.' not found.');
+                        } else {
+                            foreach ($result as $k => $qos) {
+                                $topic_name = $req[$k];
+                                if ($topic_name){
+                                    if ($qos != 0x80) {
+                                        if (isset($this->topics[$topic_name])){
+                                            $this->topics[$topic_name]->setQos($qos);
+                                        }
+                                    } else {
+                                        $this->logger->log(MqttLogInterface::ERROR,'Subscribe '.$topic_name.' fail.');
                                     }
-                                } else {
-                                    $this->logger->log(MqttLogInterface::ERROR,'Subscribe '.$topic_name.' fail.');
+                                }else{
+                                    $this->logger->log(MqttLogInterface::ERROR,'Subscribe topic not found.');
                                 }
-                            }else{
-                                $this->logger->log(MqttLogInterface::ERROR,'Subscribe topic not found.');
                             }
+                            $this->store->delete(MessageType::SUBACK,'requesting',$msg_id);
                         }
-                        $this->store->delete(MessageType::SUBACK,'requesting',$msg_id);
-                    }
-                    $this->trigger(ClientTriggers::RECEIVE_SUBACK,$message);
-                    break;
-                case MessageType::PUBLISH:
-                    /* @var Publish $message */
-                    $qos = $message->getQos();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBLISH. QOS:'.$qos);
-                    if ($qos == Qos::MOST_ONE_TIME){
-                        $this->handleReceive($message);
-                    }elseif ($qos == Qos::LEAST_ONE_TIME){
-                        $this->handleReceive($message);
-                        $msg_id = $message->getMessageId();
-                        $this->logger->log(MqttLogInterface::DEBUG,'Puback');
-                        $puback = Message::produce(MessageType::PUBACK,$this);
-                        $puback->setMessageId($msg_id);
-                        $this->write($puback);
-                    }elseif ($qos == Qos::ONE_TIME){
-                        $msg_id = $message->getMessageId();
-                        $this->logger->log(MqttLogInterface::DEBUG,'Pubrec');
-                        $pubrec = Message::produce(MessageType::PUBREC,$this);
-                        $pubrec->setMessageId($msg_id);
-                        $this->write($pubrec);
-                        $this->getStore()->set(MessageType::PUBREL,'pubrecing',$msg_id,$pubrec->encode());
-                        $this->registerResend(MessageType::PUBREL,'pubrecing',$msg_id,$this->resend_times);
-                        $this->handleReceive($message);
-                    }
-                    $this->trigger(ClientTriggers::RECEIVE_PUBLISH,$message);
-                    break;
-                case MessageType::PUBACK:
-                    $msg_id = $message->getMessageId();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBACK. MESSAGE_ID:'.$msg_id);
-                    $this->getStore()->delete(MessageType::PUBACK,'publishing',$msg_id);
-                    $this->unregisterResend(MessageType::PUBACK,'publishing',$msg_id);
-                    $this->trigger(ClientTriggers::RECEIVE_PUBACK,$message);
-                    break;
-                case MessageType::PUBREC:
-                    $msg_id = $message->getMessageId();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBREC. MESSAGE_ID:'.$msg_id);
-                    $this->getStore()->delete(MessageType::PUBREC,'publishing',$msg_id);
-                    $this->unregisterResend(MessageType::PUBREC,'publishing',$msg_id);
-                    $pubrel = Message::produce(MessageType::PUBREL,$this);
-                    $pubrel->setMessageId($msg_id);
-                    $this->write($pubrel);
-                    $this->getStore()->set(MessageType::PUBCOMP,'pubreling',$msg_id,$pubrel->encode());
-                    $this->registerResend(MessageType::PUBCOMP,'pubreling',$msg_id,$this->resend_times);
-                    $this->trigger(ClientTriggers::RECEIVE_PUBREC,$message);
-                    break;
-                case MessageType::PUBREL:
-                    $msg_id = $message->getMessageId();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBREL. MESSAGE_ID:'.$msg_id);
-                    $this->getStore()->delete(MessageType::PUBREL,'pubrecing',$msg_id);
-                    $this->unregisterResend(MessageType::PUBREL,'pubrecing',$msg_id);
-                    $pubcomp = Message::produce(MessageType::PUBCOMP,$this);
-                    $pubcomp->setMessageId($msg_id);
-                    $this->write($pubcomp);
-                    $this->trigger(ClientTriggers::RECEIVE_PUBREL,$message);
-                    break;
-                case MessageType::PUBCOMP:
-                    $msg_id = $message->getMessageId();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBCOMP. MESSAGE_ID:'.$msg_id);
-                    $this->getStore()->delete(MessageType::PUBCOMP,'pubreling',$msg_id);
-                    $this->unregisterResend(MessageType::PUBCOMP,'pubreling',$msg_id);
-                    $this->trigger(ClientTriggers::RECEIVE_PUBCOMP,$message);
-                    break;
-                case MessageType::UNSUBACK:
-                    $msg_id = $message->getMessageId();
-                    $this->logger->log(MqttLogInterface::DEBUG,'Receive UNSUBACK.');
-                    $topics = $this->store->get(MessageType::UNSUBACK,'requesting',$msg_id);
-                    if (!$topics) {
-                        $this->logger->log(MqttLogInterface::ERROR,'Unsubscribe request of msg id '.$msg_id.' not found.');
-                    } else {
-                        foreach ($topics as $topic) {
-                            $this->logger->log(MqttLogInterface::DEBUG,'Unsubscribe '.$topic);
-                            unset($this->topics[$topic]);
+                        $this->trigger(ClientTriggers::RECEIVE_SUBACK,$message);
+                        break;
+                    case MessageType::PUBLISH:
+                        /* @var Publish $message */
+                        $qos = $message->getQos();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBLISH. QOS:'.$qos);
+                        if ($qos == Qos::MOST_ONE_TIME){
+                            $this->handleReceive($message);
+                        }elseif ($qos == Qos::LEAST_ONE_TIME){
+                            $this->handleReceive($message);
+                            $msg_id = $message->getMessageId();
+                            $this->logger->log(MqttLogInterface::DEBUG,'Puback');
+                            $puback = Message::produce(MessageType::PUBACK,$this);
+                            $puback->setMessageId($msg_id);
+                            $this->write($puback);
+                        }elseif ($qos == Qos::ONE_TIME){
+                            $msg_id = $message->getMessageId();
+                            $this->logger->log(MqttLogInterface::DEBUG,'Pubrec');
+                            $pubrec = Message::produce(MessageType::PUBREC,$this);
+                            $pubrec->setMessageId($msg_id);
+                            $this->write($pubrec);
+                            $this->getStore()->set(MessageType::PUBREL,'pubrecing',$msg_id,$pubrec->encode());
+                            $this->registerResend(MessageType::PUBREL,'pubrecing',$msg_id,$this->resend_times);
+                            $this->handleReceive($message);
                         }
-                        $this->store->delete(MessageType::UNSUBACK,'requesting',$msg_id);
-                    }
-                    $this->trigger(ClientTriggers::RECEIVE_UNSUBACK,$message);
-                    break;
-                default:
-                    break;
+                        $this->trigger(ClientTriggers::RECEIVE_PUBLISH,$message);
+                        break;
+                    case MessageType::PUBACK:
+                        $msg_id = $message->getMessageId();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBACK. MESSAGE_ID:'.$msg_id);
+                        $this->getStore()->delete(MessageType::PUBACK,'publishing',$msg_id);
+                        $this->unregisterResend(MessageType::PUBACK,'publishing',$msg_id);
+                        $this->trigger(ClientTriggers::RECEIVE_PUBACK,$message);
+                        break;
+                    case MessageType::PUBREC:
+                        $msg_id = $message->getMessageId();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBREC. MESSAGE_ID:'.$msg_id);
+                        $this->getStore()->delete(MessageType::PUBREC,'publishing',$msg_id);
+                        $this->unregisterResend(MessageType::PUBREC,'publishing',$msg_id);
+                        $pubrel = Message::produce(MessageType::PUBREL,$this);
+                        $pubrel->setMessageId($msg_id);
+                        $this->write($pubrel);
+                        $this->getStore()->set(MessageType::PUBCOMP,'pubreling',$msg_id,$pubrel->encode());
+                        $this->registerResend(MessageType::PUBCOMP,'pubreling',$msg_id,$this->resend_times);
+                        $this->trigger(ClientTriggers::RECEIVE_PUBREC,$message);
+                        break;
+                    case MessageType::PUBREL:
+                        $msg_id = $message->getMessageId();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBREL. MESSAGE_ID:'.$msg_id);
+                        $this->getStore()->delete(MessageType::PUBREL,'pubrecing',$msg_id);
+                        $this->unregisterResend(MessageType::PUBREL,'pubrecing',$msg_id);
+                        $pubcomp = Message::produce(MessageType::PUBCOMP,$this);
+                        $pubcomp->setMessageId($msg_id);
+                        $this->write($pubcomp);
+                        $this->trigger(ClientTriggers::RECEIVE_PUBREL,$message);
+                        break;
+                    case MessageType::PUBCOMP:
+                        $msg_id = $message->getMessageId();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive PUBCOMP. MESSAGE_ID:'.$msg_id);
+                        $this->getStore()->delete(MessageType::PUBCOMP,'pubreling',$msg_id);
+                        $this->unregisterResend(MessageType::PUBCOMP,'pubreling',$msg_id);
+                        $this->trigger(ClientTriggers::RECEIVE_PUBCOMP,$message);
+                        break;
+                    case MessageType::UNSUBACK:
+                        $msg_id = $message->getMessageId();
+                        $this->logger->log(MqttLogInterface::DEBUG,'Receive UNSUBACK.');
+                        $topics = $this->store->get(MessageType::UNSUBACK,'requesting',$msg_id);
+                        if (!$topics) {
+                            $this->logger->log(MqttLogInterface::ERROR,'Unsubscribe request of msg id '.$msg_id.' not found.');
+                        } else {
+                            foreach ($topics as $topic) {
+                                $this->logger->log(MqttLogInterface::DEBUG,'Unsubscribe '.$topic);
+                                unset($this->topics[$topic]);
+                            }
+                            $this->store->delete(MessageType::UNSUBACK,'requesting',$msg_id);
+                        }
+                        $this->trigger(ClientTriggers::RECEIVE_UNSUBACK,$message);
+                        break;
+                    default:
+                        break;
+                }
+                $this->trigger(ClientTriggers::SOCKET_RECEIVE,$message);
+            }catch (\Exception $exception){
+                $this->getLogger()->log(MqttLogInterface::ERROR,$exception->getMessage());
             }
-            $this->trigger(ClientTriggers::SOCKET_RECEIVE,$message);
         });
 
         $this->socket->on('error',function($error){
-            $this->logger->log(MqttLogInterface::ERROR,'Connect fail:'.json_encode($error));
-            $this->reconnect_count ++;
-            if ($this->max_reconnect_times_when_error == 0 || $this->reconnect_count <= $this->max_reconnect_times_when_error){
-                swoole_timer_after($this->reconnect_interval,[$this,'connect']);
-            }else{
-                $this->disconnect();
+            try{
+                $this->logger->log(MqttLogInterface::ERROR,'Connect fail:'.json_encode($error));
+                $this->reconnect_count ++;
+                if ($this->max_reconnect_times_when_error == 0 || $this->reconnect_count <= $this->max_reconnect_times_when_error){
+                    swoole_timer_after($this->reconnect_interval,[$this,'connect']);
+                }else{
+                    $this->disconnect();
+                }
+                $this->trigger(ClientTriggers::SOCKET_ERROR,null);
+            }catch (\Exception $exception){
+                $this->getLogger()->log(MqttLogInterface::ERROR,$exception->getMessage());
             }
-            $this->trigger(ClientTriggers::SOCKET_ERROR,null);
         });
 
         $this->socket->on('close',function(){
-            $this->logger->log(MqttLogInterface::ERROR,'Connect close.');
-            if ($this->keep_alive_timer_id != null) {
-                swoole_timer_clear($this->keep_alive_timer_id);
-                $this->keep_alive_timer_id = null;
+            try{
+                $this->logger->log(MqttLogInterface::ERROR,'Connect close.');
+                if ($this->keep_alive_timer_id != null) {
+                    swoole_timer_clear($this->keep_alive_timer_id);
+                    $this->keep_alive_timer_id = null;
+                }
+                $this->reconnect_count ++;
+                if ($this->max_reconnect_times_when_error == 0 || $this->reconnect_count <= $this->max_reconnect_times_when_error){
+                    swoole_timer_after($this->reconnect_interval,[$this,'connect']);
+                }else{
+                    $this->disconnect();
+                }
+                $this->trigger(ClientTriggers::SOCKET_CLOSE,null);
+            }catch (\Exception $exception){
+                $this->getLogger()->log(MqttLogInterface::ERROR,$exception->getMessage());
             }
-
-            $this->reconnect_count ++;
-            if ($this->max_reconnect_times_when_error == 0 || $this->reconnect_count <= $this->max_reconnect_times_when_error){
-                swoole_timer_after($this->reconnect_interval,[$this,'connect']);
-            }else{
-                $this->disconnect();
-            }
-
-            $this->trigger(ClientTriggers::SOCKET_CLOSE,null);
         });
 
         swoole_async_dns_lookup($this->host, function($host, $ip) use($port){

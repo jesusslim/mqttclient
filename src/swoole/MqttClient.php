@@ -711,7 +711,7 @@ class MqttClient
                             str_replace("$",'\$',
                                 $key))))."$/",$topic_name) ){
                 /* @var \mqttclient\src\subscribe\Topic $topic */
-                $container->call($topic->getHandler(),['msg' => $publish->getMessage(),'msg_id' => $publish->getMessageId()]);
+                $container->call($topic->getHandler(),['msg' => $publish->getMessage(),'msg_id' => $publish->getMessageId(),'topic' => $publish->getTopic()]);
             }
         }
     }

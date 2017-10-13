@@ -343,7 +343,7 @@ class MqttClient
 
         $this->socket->on('connect',function ($cli){
             $this->reconnect_count = 0;
-            /* @var \mqttclient\src\message\Connect */
+            /* @var \mqttclient\src\swoole\message\Connect */
             $msg = Message::produce(MessageType::CONNECT,$this);
             $this->write($msg);
             $this->keep_alive_timer_id = swoole_timer_tick($this->keep_alive * 500, [$this, 'keepAlive']);

@@ -568,7 +568,7 @@ class MqttClient
     {
         $this->logger->log(MqttLogInterface::DEBUG,'Disconnect');
         $disconnect = Message::produce(MessageType::DISCONNECT,$this);
-        if ($this->socket->isConnected()){
+        if ($this->socket && $this->socket->isConnected()){
             $this->write($disconnect);
             $this->socket->close();
         }

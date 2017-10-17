@@ -14,6 +14,7 @@ use mqttclient\src\consts\ClientTriggers;
 use mqttclient\src\consts\MessageType;
 use mqttclient\src\consts\MqttVersion;
 use mqttclient\src\consts\Qos;
+use mqttclient\src\exception\MqttClientException;
 use mqttclient\src\swoole\message\MessageInterface;
 use mqttclient\src\swoole\message\Publish;
 use mqttclient\src\swoole\message\Suback;
@@ -509,8 +510,10 @@ class MqttClient
      * write
      * @param MessageInterface $msg
      * @return bool
+     * @throws MqttClientException
      */
     protected function write(MessageInterface $msg){
+        if (is_null($this->socket)) throw new MqttClientException('socket is null');
         return $this->socket->send($msg->encode());
     }
 
@@ -518,12 +521,14 @@ class MqttClient
      * read
      * @param $data
      * @return bool|MessageInterface
+     * @throws MqttClientException
      */
     protected function read($data){
         $type = Util::decodeCmd(ord($data{0}));
         $index = 1;
         $remaining_length = Util::decodeRemainLength($data,$index);
         $msg = Message::produce($type,$this);
+        if ($msg === false) throw new MqttClientException("read message produce fail $type");
         $msg->decode($data,$remaining_length);
         return $msg;
     }

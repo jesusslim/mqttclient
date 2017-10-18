@@ -334,6 +334,7 @@ class MqttClient
      * @param bool $clean
      */
     public function connect($clean = true){
+        if ($this->socket && $this->socket->isConnected()) return;
         $this->clean = $clean;
         $this->socket = new \swoole_client(SWOOLE_SOCK_TCP, SWOOLE_SOCK_ASYNC);
         $this->socket->set([
@@ -347,6 +348,7 @@ class MqttClient
             /* @var \mqttclient\src\swoole\message\Connect */
             $msg = Message::produce(MessageType::CONNECT,$this);
             $this->write($msg);
+            $this->logger->log(MqttLogInterface::DEBUG,'Connect');
             $this->keep_alive_timer_id = swoole_timer_tick($this->keep_alive * 500, [$this, 'keepAlive']);
             $this->trigger(ClientTriggers::SOCKET_CONNECT,null);
         });

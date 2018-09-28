@@ -764,4 +764,11 @@ class MqttClient
             $container->call($this->call_backs[$trigger],['msg' => $msg]);
         }
     }
+
+    /**
+     * @return \swoole_client
+     */
+    public function getSocket(){
+        return $this->socket;
+    }
 }

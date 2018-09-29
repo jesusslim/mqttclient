@@ -747,9 +747,10 @@ class MqttClient
      * set a trigger
      * @param $trigger
      * @param \Closure $call_back
+     * @param string $cb_id callback_id/key
      */
-    public function on($trigger,\Closure $call_back){
-        $this->call_backs[$trigger] = $call_back;
+    public function on($trigger,\Closure $call_back,$cb_id = 'default'){
+        $this->call_backs[$trigger][$cb_id] = $call_back;
         return $this;
     }
 
@@ -761,7 +762,9 @@ class MqttClient
     protected function trigger($trigger,MessageInterface $msg = null){
         if (isset($this->call_backs[$trigger])){
             $container = $this->produceContainer();
-            $container->call($this->call_backs[$trigger],['msg' => $msg]);
+            foreach ($this->call_backs[$trigger] as $cb_id => $call_back){
+                $container->call($call_back,compact('msg','container'));
+            }
         }
     }
 

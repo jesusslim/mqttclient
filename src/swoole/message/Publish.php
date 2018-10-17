@@ -118,7 +118,11 @@ class Publish extends BaseMessage
      */
     public function decodePayload($data, $pos)
     {
-        $this->message = substr($data,$pos);
+        $msg_length = $this->getRemainLength() - strlen($this->getTopic()) - 2;
+        if ($this->getQos() > 0) {
+            $msg_length -= 2;
+        }
+        $this->message = substr($data,$pos, $msg_length);
     }
 
     public function encodeVariableHeader()

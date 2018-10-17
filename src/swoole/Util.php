@@ -92,4 +92,21 @@ class Util
         $index += $length;
         return $data;
     }
+
+    /**
+     * @param $str
+     * @return string
+     */
+    public static function str2hex($str) {
+        $ascii = '';
+        for ($i=0; $i<strlen($str); $i++) {
+            $char = $str[$i];
+            if (ord($char) >= 0x20 && ord($char) <= 0x7f) {
+                $ascii .= $char;
+            } else {
+                $ascii .= '.';
+            }
+        }
+        return  $ascii  . '  length: ' . strlen($ascii);
+    }
 }

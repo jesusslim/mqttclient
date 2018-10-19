@@ -369,7 +369,7 @@ class MqttClient
         $this->socket->on('receive',function(\swoole_client $cli,$data){
             $cli->sleep();
             $messages = $this->read($data,$cli);
-            $this->handleMessages($messages);
+            if (count($messages) > 0) $this->handleMessages($messages);
         });
 
         $this->socket->on('error',function($error){
@@ -425,12 +425,17 @@ class MqttClient
      * @param $data
      * @param \swoole_client $client
      * @return array
-     * @throws MqttClientException
      */
     protected function read($data,$client){
         $messages = [];
         while (true) {
-            $msg = $this->readPacket($data);
+            try{
+                $msg = $this->readPacket($data);
+            }catch (\Exception $exception){
+                $this->logger->log(MqttLogInterface::ERROR,'Read Error:' . $exception->getMessage());
+                $messages[] = false;
+                break;
+            }
             $messages[] = $msg;
             $data = substr($data, $msg->getFullLength());
             if (strlen($data) == 0) {
@@ -442,11 +447,11 @@ class MqttClient
                 $full_next_packet_length = 1 + strlen(Util::packRemainLength($next_remain_length)) + $next_remain_length;
 
                 if (strlen($data) < $full_next_packet_length) {
-                    $this->logger->log(MqttLogInterface::DEBUG, 'Lost Length : ' . strlen($data) . '<' . $full_next_packet_length);
+                    $this->logger->log(MqttLogInterface::ERROR, 'Lost Length : ' . strlen($data) . '<' . $full_next_packet_length);
                     $lost_packet_length = $full_next_packet_length - strlen($data);
                     $lost_packet = $client->recv($lost_packet_length, \swoole_client::MSG_WAITALL);
-                    $this->logger->log(MqttLogInterface::DEBUG,'Lost Prev Data:' . Util::str2hex($data));
-                    $this->logger->log(MqttLogInterface::DEBUG,'Lost Next Data:' . Util::str2hex($lost_packet));
+                    $this->logger->log(MqttLogInterface::ERROR,'Lost Prev Data:' . Util::str2hex($data));
+                    $this->logger->log(MqttLogInterface::ERROR,'Lost Next Data:' . Util::str2hex($lost_packet));
                     $data .= $lost_packet;
                     $this->logger->log(MqttLogInterface::ERROR,'Lost Full Data:' . Util::str2hex($data));
                 }
@@ -466,7 +471,7 @@ class MqttClient
         $index = 1;
         $remaining_length = Util::decodeRemainLength($data,$index);
         $msg = Message::produce($type, $this);
-        if ($msg === false) throw new MqttClientException("read message produce fail $type");
+        if ($msg === false) throw new MqttClientException("read message produce fail $type ".Util::str2hex($data));
         $msg->decode($data,$remaining_length);
         return $msg;
     }
@@ -477,6 +482,10 @@ class MqttClient
      */
     protected function handleMessages($messages){
         foreach ($messages as $message){
+            if ($message === false){
+                $this->trigger(ClientTriggers::RECEIVE_UNKNOWN_MESSAGE);
+                continue;
+            }
             /* @var MessageInterface $message */
             switch ($message->getType()){
                 case MessageType::CONNACK:

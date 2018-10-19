@@ -16,6 +16,7 @@ class ClientTriggers
     const SOCKET_RECEIVE = 'socket_receive';
     const SOCKET_ERROR = 'socket_error';
     const SOCKET_CLOSE = 'socket_close';
+    const RECEIVE_UNKNOWN_MESSAGE = 'receive_unknown_message';
 
     const RECEIVE_CONNACK = 'receive_connack';
     const RECEIVE_PINGRESP = 'receive_pingresp';

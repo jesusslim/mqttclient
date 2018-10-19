@@ -40,6 +40,9 @@ class MqttClient
     //是否开启dns_lookup
     private $dns_lookup;
 
+    //缓冲区大小
+    private $socket_buffer_size;
+
     //auth 加密 [user_name => '',password => '']
     private $auth;
 
@@ -108,6 +111,7 @@ class MqttClient
         $this->mqtt_version = MqttVersion::V311;
         $this->clean = true;
         $this->package_max_length = 1024*1024*2;
+        $this->socket_buffer_size = 1024*1024*2;
         $this->dns_lookup = false;
     }
 
@@ -141,6 +145,22 @@ class MqttClient
     public function setPackageMaxLength($package_max_length)
     {
         $this->package_max_length = $package_max_length;
+    }
+
+    /**
+     * @return int
+     */
+    public function getSocketBufferSize()
+    {
+        return $this->socket_buffer_size;
+    }
+
+    /**
+     * @param int $socket_buffer_size
+     */
+    public function setSocketBufferSize($socket_buffer_size)
+    {
+        $this->socket_buffer_size = $socket_buffer_size;
     }
 
     /**
@@ -353,6 +373,7 @@ class MqttClient
         $this->socket->set([
             'open_mqtt_protocol'     => true,
             'package_max_length'    => $this->package_max_length,  //协议最大长度
+            'socket_buffer_size'    => $this->socket_buffer_size   //缓冲区小区
         ]);
         $port = $this->port;
 

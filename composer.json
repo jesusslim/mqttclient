@@ -3,7 +3,7 @@
 	"description": "php mqtt client",
 	"license": "MIT",
 	"keywords": ["mqtt"],
-	"version": "1.34-dev",
+	"version": "1.4",
 	"authors": [
 		{
 			"name": "jesusslim",

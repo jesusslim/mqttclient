@@ -467,10 +467,14 @@ class MqttClient
                 $next_remain_length = Util::decodeRemainLength($data, $index);
                 $full_next_packet_length = 1 + strlen(Util::packRemainLength($next_remain_length)) + $next_remain_length;
 
-                if (strlen($data) < $full_next_packet_length) {
+                while (strlen($data) < $full_next_packet_length) {
                     $this->logger->log(MqttLogInterface::ERROR, 'Lost Length : ' . strlen($data) . '<' . $full_next_packet_length);
                     $lost_packet_length = $full_next_packet_length - strlen($data);
                     $lost_packet = $client->recv($lost_packet_length, \swoole_client::MSG_WAITALL);
+                    if (empty($lost_packet)){
+                        $this->logger->log(MqttLogInterface::ERROR,'Lost Packet Recv Empty');
+                        break;
+                    }
                     $this->logger->log(MqttLogInterface::ERROR,'Lost Prev Data:' . Util::str2hex($data));
                     $this->logger->log(MqttLogInterface::ERROR,'Lost Next Data:' . Util::str2hex($lost_packet));
                     $data .= $lost_packet;

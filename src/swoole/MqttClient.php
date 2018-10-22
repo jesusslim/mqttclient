@@ -475,8 +475,8 @@ class MqttClient
                         $this->logger->log(MqttLogInterface::ERROR,'Lost Packet Recv Empty');
                         break;
                     }
-                    $this->logger->log(MqttLogInterface::ERROR,'Lost Prev Data:' . Util::str2hex($data));
-                    $this->logger->log(MqttLogInterface::ERROR,'Lost Next Data:' . Util::str2hex($lost_packet));
+                    $this->logger->log(MqttLogInterface::DEBUG,'Lost Prev Data:' . Util::str2hex($data));
+                    $this->logger->log(MqttLogInterface::DEBUG,'Lost Next Data:' . Util::str2hex($lost_packet));
                     $data .= $lost_packet;
                     $this->logger->log(MqttLogInterface::ERROR,'Lost Full Data:' . Util::str2hex($data));
                 }

@@ -470,7 +470,7 @@ class MqttClient
                 while (strlen($data) < $full_next_packet_length) {
                     $this->logger->log(MqttLogInterface::ERROR, 'Lost Length : ' . strlen($data) . '<' . $full_next_packet_length);
                     $lost_packet_length = $full_next_packet_length - strlen($data);
-                    $lost_packet = $client->recv($lost_packet_length, \swoole_client::MSG_WAITALL);
+                    $lost_packet = $client->recv($lost_packet_length);
                     if (empty($lost_packet)){
                         $this->logger->log(MqttLogInterface::ERROR,'Lost Packet Recv Empty');
                         break;

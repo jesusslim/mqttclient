@@ -60,6 +60,7 @@ class Util
         $multiplier = 1;
         $value = 0 ;
         do{
+            if (!isset($data[$index])) break;
             $digit = ord($data[$index]);
             $value += ($digit & 0x7F) * $multiplier;
             $multiplier *= 0x80;

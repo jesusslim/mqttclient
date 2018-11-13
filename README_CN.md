@@ -20,8 +20,74 @@ Install:
 ### 依赖
 
 	swoole 2.0.8+
+    mosquitto.so扩展
 
 ### 例子
+
+本库提供两种mqtt客户端实现。第一种基于swoole(已不推荐 参看下文swoole例子)，第二种基于mosquitto(参看下文mosquitto例子)。
+
+两种实现的区别:
+* 依赖不同.
+* swoole扩展存在分包和crash的bug(在当前最新的4.2.7版本仍未解决)。因此使用时需手动处理这些异常。例如监听进程存活情况,在crash或者收到不完整包时重新启动进程。
+* swoole实现的客户端可在一个客户端内同时收发消息，mosquitto实现为阻塞，收发消息需要开启两个进程。
+* 一些swoole 和 mosquitto的语法差异
+
+#### mosquitto例子
+
+define your logger:
+
+    class Logger implements \mqttclient\src\swoole\MqttLogInterface {
+
+		public function log($type,$content,$params = []){
+		        echo "$type : $content \r\n";
+		 }
+	}
+
+use Mqttclient (用于收消息)
+
+    $host = '127.0.0.1';
+	$port = 1883;
+    $r = new \mqttclient\src\mosquitto\MqttClient($host,$port,10017);
+    $r->setAuth('username','password');
+    $r->setKeepAlive(60);
+    $r->setLogger(new Logger());
+    $r->setMaxReconnectTimesWhenError(360*12);
+    //reconnect interval
+    $r->setReconnectInterval(10);
+    //subscribe topics,callback's params can be any data we mapped into the container(IOC)
+    $r->setTopics(
+    [
+        new \mqttclient\src\subscribe\Topic('test/slim',function($msg){
+            echo "I receive:".$msg."\r\n";}),
+        new \mqttclient\src\subscribe\Topic('test/slim3',function(\mqttclient\src\swoole\MqttClient $client,$msg){
+            echo "I receive:".$msg." for slim3 \r\n";
+            echo $client->getClientId();
+        })
+    ]
+    );
+    //set trigger
+    $r->on(\mqttclient\src\consts\ClientTriggers::SOCKET_CONNECT,function(){
+        //do something
+    });
+    $r->start();
+    
+Sender (用于发消息)
+
+    $host = '127.0.0.1';
+    $port = 1883;
+    $r = new \mqttclient\src\mosquitto\MqttSender($host,$port,10017);
+    $r->setAuth('username','password');
+    $r->setKeepAlive(60);
+    $r->setLogger(new Logger());
+    $r->setMaxReconnectTimesWhenError(360*12);
+    //reconnect interval
+    $r->setReconnectInterval(10);
+    $r->setQueue(new Queue());
+    $r->start();
+
+需要实现一个消息队列Queue类 实现mqttclient\src\mosquitto\MqttSendingQueue接口，便于在循环中获取需要被发送的消息内容。
+
+#### swoole例子(不推荐)
 
 定义logger 用于日志输出:(实现mqttclient\src\swoole\MqttLogInterface接口 推荐使用最简单的echo或者写文件/redis实现)
 

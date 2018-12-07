@@ -188,6 +188,13 @@ class MqttClient
     }
 
     /**
+     * 
+     */
+    public function clearTopics(){
+        $this->topics = [];
+    }
+
+    /**
      * @return int
      */
     public function getMaxReconnectTimesWhenError()

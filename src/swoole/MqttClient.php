@@ -438,7 +438,12 @@ class MqttClient
      */
     protected function write(MessageInterface $msg){
         if (is_null($this->socket)) throw new MqttClientException('socket is null');
-        return $this->socket->send($msg->encode());
+        try{
+            return $this->socket->send($msg->encode());
+        }catch (\Exception $exception){
+            $this->logger->log(MqttLogInterface::ERROR,'Send Error:' . $exception->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -783,9 +788,13 @@ class MqttClient
             $this->logger->log(MqttLogInterface::DEBUG,'Try Resend. MESSAGE TYPE:'.$store_msg_type.' ACTION:'.$store_key.' MESSAGE_ID:'.$store_sub_key .' REMAIN TIMES:'.$times);
             $stored = $this->getStore()->get($store_msg_type,$store_key,$store_sub_key);
             if ($stored){
-                $this->socket->send($stored);
-                $this->logger->log(MqttLogInterface::DEBUG,'Already Resend. MESSAGE TYPE:'.$store_msg_type.' ACTION:'.$store_key.' MESSAGE_ID:'.$store_sub_key);
-                $this->registerResend($store_msg_type,$store_key,$store_sub_key,$times-1);
+                try{
+                    $this->socket->send($stored);
+                    $this->logger->log(MqttLogInterface::DEBUG,'Already Resend. MESSAGE TYPE:'.$store_msg_type.' ACTION:'.$store_key.' MESSAGE_ID:'.$store_sub_key);
+                    $this->registerResend($store_msg_type,$store_key,$store_sub_key,$times-1);
+                }catch (\Exception $exception){
+                    $this->logger->log(MqttLogInterface::ERROR,'Send Error:' . $exception->getMessage());
+                }
             }
         });
         $this->getStore()->set(self::TIMER_TAG.$store_msg_type,$store_key,$store_sub_key,$timer_id);
